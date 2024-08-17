@@ -1,0 +1,191 @@
+#include<Servo.h>
+// tạo servo và khai báo pin
+Servo myservo;
+#define trig 2
+#define echo 4
+
+// khai báo pin của L298
+#define IN1 6
+#define IN2 7
+#define IN3 8
+#define IN4 9
+#define ENA 11
+#define ENB 3
+#define offset 8
+
+  const byte dungyen = 0;
+  const byte tien = 1;
+  const byte lui = 2;
+  const byte quaytrai = 3;
+  const byte quayphai = 4;
+  const byte retrai = 5;
+  const byte rephai = 6;
+  const byte luitrai = 7;
+  const byte luiphai = 8;
+
+int khoangCachVatCan(byte goc, int thoigianquay){  //servo sẽ quay theo góc chỉ định và cảm biến đo KC
+  unsigned long duration; // lưu tgian
+  int distance; // lưu kc
+  int sum = 0;
+  myservo.write(goc); // servo quay đến góc chỉ định
+//  if (goc != 90) {
+//    delay(1000);
+//  }
+  delay(thoigianquay);
+
+  // phát xung
+  for(int i = 0; i < 5; i++){
+    digitalWrite(trig,0);
+    delayMicroseconds(2);
+    digitalWrite(trig,1);
+    delayMicroseconds(5);
+    digitalWrite(trig,0);
+  
+    //tính kc
+    duration = pulseIn(echo,HIGH);
+    distance = int(duration/2/29.412);
+    sum += distance;
+  }
+  distance = sum/5;
+  return distance;
+}
+
+void motorQuay(byte in1, byte in2, byte en, int v, byte chieu){ //chiều motor quay
+  /*in1, in2 tg đg kiểu IN1, IN2
+   * hướng gồm:
+   * 0: dừng
+   * 1: đi lên
+   * 2: đi xuống
+   */
+   int a = map(v,0,100,0,255);
+   switch(chieu){
+    case 0: //dừng
+    digitalWrite(in1,LOW);
+    digitalWrite(in2,LOW);
+    analogWrite(en,a);
+    break;
+    case 1: //tiến
+    digitalWrite(in1,HIGH);
+    digitalWrite(in2,LOW);
+    analogWrite(en,a);
+    break;
+    case 2: //lùi
+    digitalWrite(in1,LOW);
+    digitalWrite(in2,HIGH);
+    analogWrite(en,a);
+    break;
+    default: break;
+   }
+}
+
+void robotDiChuyen(byte inR1, byte inR2, byte inL1, byte inL2, byte enA, byte enB,int v, byte huongdi){ //hướng robot di chuyển, R là phải, L là trái
+   //inR1, inR2 là motor bên phải
+   //inL1, inL2 là motor bên trái
+   /*chieu:
+   *-0: đứng yên
+   *-1: đi thẳng
+   *-2: đi lùi
+   *-3: quay trái
+   *-4: quay phải
+   *-5: đi trái
+   *-6: đi phải
+   *-7: lùi trái
+   *-8: lùi phải
+   */
+  switch(huongdi){
+    case 0:// không di chuyển
+      motorQuay(inR1, inR2,enA,v, dungyen);
+      motorQuay(inL1, inL2,enB,v+offset, dungyen);
+      break;
+    case 1://đi thẳng
+      motorQuay(inR1, inR2,enA,v, tien);
+      motorQuay(inL1, inL2,enB,v+offset, tien);
+      break;
+    case 2:// lùi lại
+      motorQuay(inR1, inR2,enA,v, lui);
+      motorQuay(inL1, inL2,enB,v+offset, lui);
+      break;
+    case 3:// quay trái
+      motorQuay(inR1, inR2,enA,v, tien);
+      motorQuay(inL1, inL2,enB,v+offset, lui);
+      break;
+    case 4:// quay phải
+      motorQuay(inR1, inR2,enA,v, lui);
+      motorQuay(inL1, inL2,enB,v+offset, tien);
+      break;
+    case 5:// đi trái
+      motorQuay(inR1, inR2,enA,v, tien);
+      motorQuay(inL1, inL2,enB,v+offset, dungyen);
+      break;
+    case 6:// đi phải
+      motorQuay(inR1, inR2,enA,v, dungyen);
+      motorQuay(inL1, inL2,enB,v+offset, tien);
+      break;
+    case 7:// lùi trái
+      motorQuay(inR1, inR2,enA,v, lui);
+      motorQuay(inL1, inL2,enB,v+offset, dungyen);
+      break;
+    case 8:// lùi phải
+      motorQuay(inR1, inR2,enA,v, dungyen);
+      motorQuay(inL1, inL2,enB,v+offset, lui);
+      break;
+    default:
+      huongdi = dungyen;
+  }
+}
+
+void robotNeVatCan(byte inR1,byte inR2, byte inL1, byte inL2,byte enA, byte enB,int v, int kc_cho_phep, int thoi_gian_quay){ //hàm chính của robot
+  robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, tien); //robot đi thẳng
+  int kc_truoc = khoangCachVatCan(90,100); // đo kc phía trước
+  Serial.println(kc_truoc);
+  int kc_trai;
+  int kc_phai;
+  if( kc_truoc <= kc_cho_phep){ // nếu nhỏ hơn thì robot đi lùi
+    robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, lui);
+    delay(300);
+    robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, dungyen);
+    kc_trai = khoangCachVatCan(180,400);
+    kc_phai = khoangCachVatCan(0,400);
+    if(max(kc_trai, kc_phai) == kc_trai && max(kc_trai,kc_phai) > kc_cho_phep){
+      robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, quaytrai);
+      delay(thoi_gian_quay);
+    }
+    else if(max(kc_trai, kc_phai) == kc_phai && max(kc_trai,kc_phai) > kc_cho_phep){
+      robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, quayphai);
+      delay(thoi_gian_quay);
+    }
+    else if(max(kc_trai, kc_phai) < kc_cho_phep){
+      robotDiChuyen(inR1, inR2, inL1, inL2, enA, enB, v, lui);
+      delay(1000);
+      
+    }
+  }
+}
+
+
+void setup() {
+  // put your setup code here, to run once:
+  //Set chân
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);//1,2 sẽ nối vs cái phải
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);//3,4 nối vs cái trái
+  pinMode(trig, OUTPUT);
+  pinMode(echo, INPUT);
+  pinMode(ENA,OUTPUT);
+  pinMode(ENB,OUTPUT);
+  myservo.attach(5);
+  Serial.begin(9600);
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+  robotNeVatCan(IN1,IN2,IN3,IN4,ENA,ENB,40,30,500);
+  // int dis = khoangCachVatCan(90);
+//  int kc = khoangCachVatCan(90);
+//  robotDiChuyen(IN1,IN2,IN3,IN4,ENA,ENB,40,tien);
+//  if(kc < 30) robotDiChuyen(IN1,IN2,IN3,IN4,ENA,ENB,40,dungyen);
+//  else {
+//    robotDiChuyen(IN1,IN2,IN3,IN4,ENA,ENB,40,tien);
+//  }
+}

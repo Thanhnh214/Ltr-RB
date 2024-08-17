@@ -1,0 +1,158 @@
+#include<Servo.h>
+Servo myservo;
+#define AR 3  //analog banh phai
+#define AL 6  //analog banh trai
+#define DR 8  //digital banh phai
+#define DL 7  //digital banh trai
+#define trig 2  //trig la phat
+#define echo 12  //echo la nhan
+
+float dt = 0.01;
+float sum_err_van_toc = 0;
+float last_err_van_toc = 0;
+float sum_err_van_toc_goc = 0;
+float last_err_van_toc_goc = 0;
+float epsilon = 5;
+unsigned long prev_mil = 0;
+
+void setup() {
+  // put your setup code here, to run once:
+  myservo.attach(A1);
+  pinMode(AR,OUTPUT);
+  pinMode(AL,OUTPUT);
+  pinMode(DR,OUTPUT);
+  pinMode(DL,OUTPUT);
+  pinMode(trig,OUTPUT);
+  pinMode(echo,INPUT);
+}
+
+void control_wheel_left(int v){
+  if(v >= 255) v = 255;
+  if(v <= -255) v = -255;
+  if(v >= 0){
+    digitalWrite(DL, HIGH);
+    analogWrite(AL, v);
+  }
+  else{
+    digitalWrite(DL, LOW);
+    analogWrite(AL, -v);
+  }
+}
+void control_wheel_right(int v){
+  if(v >= 255) v = 255;
+  if(v <= -255) v = -255;
+  if(v >= 0){
+    digitalWrite(DR, HIGH);
+    analogWrite(AR, v);
+  }
+  else{
+    digitalWrite(DR, LOW);
+    analogWrite(AR, -v);
+  }
+}
+void control_bot(int v){
+  control_wheel_left(v);
+  control_wheel_right(v);
+}
+void tien(int v){
+  control_wheel_left(v);
+  control_wheel_right(v);
+}
+void lui(int v){
+  control_wheel_left(-v);
+  control_wheel_right(-v);
+}
+void quay_trai(int v){
+  control_wheel_left(-v);
+  control_wheel_right(v);
+}
+void quay_phai(int v){
+  control_wheel_left(v);
+  control_wheel_right(-v);
+}
+float khoang_cach(int goc){
+  float distance;
+  float duration;
+  myservo.write(goc);
+  digitalWrite(trig,LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig,HIGH);
+  delayMicroseconds(5);
+  digitalWrite(trig,LOW);
+  duration = pulseIn(echo,HIGH);
+  distance = duration/2/29.412;
+}
+void ne_vat_can(int v, float kc_cho_phep){
+  float kc_trai;
+  float kc_phai;
+  float kc_truoc;
+  tien(v);
+  kc_truoc = khoang_cach(90);
+  if(kc_truoc <= kc_cho_phep){
+    tien(0);
+    kc_trai = khoang_cach(180);
+    delay(500);
+    kc_phai = khoang_cach(0);
+    delay(500);
+    if(max(kc_trai,kc_phai) == kc_trai){
+      quay_trai(v);
+      delay(400);
+    }
+    else if(max(kc_trai,kc_phai) == kc_phai){
+      quay_phai(v);
+      delay(400);
+    }
+  }
+}
+float PID(float error,float kp, float ki, float kd, float& sum_err, float& last_err){
+  sum_err += error*dt;
+  float p = kp * error;
+  float i = ki * sum_err;
+  float d;
+  if(last_err == 0) d = 0;
+  else d = kd * (error - last_err)/dt;
+  last_err = error;
+  float ut = p + i + d;
+  return ut;
+}
+void bam_vat(float kc_vat){
+  float x = khoang_cach(90);
+  float error = x - kc_vat;
+  int v = (int)PID(error,100,2,3,sum_err_van_toc,last_err_van_toc);
+  control_bot(v);
+  delay(10); // do dt =0.01
+}
+void bam_tuong(float kc_tuong){
+  float x = khoang_cach(180); //trai
+  float error_goc = x - kc_tuong;
+//  float error_van_toc = epsilon - abs(x - kx_tuong);
+//  int v = (int)PID(error_van_toc,100,2,3,sum_err_van_toc,last_err_van_toc);
+  int v = 100;
+  int w = (int)PID(error_goc,20,1,1,sum_err_van_toc_goc,last_err_van_toc_goc);
+  int v_left = v - w;
+  int v_right = v + w;
+  control_wheel_left(v_left);
+  control_wheel_right(v_right);
+  delay(10);
+}
+void bam_tuong_co_re(float kc_tuong){
+  unsigned long cur_mil = millis();
+  bam_tuong(kc_tuong);
+  if(cur_mil - prev_mil >= 3000){
+    control_bot(0);
+    sum_err_van_toc_goc = 0;
+    last_err_van_toc_goc = 0;
+    float a = khoang_cach(90);
+    delay(500);
+    prev_mil = cur_mil;
+    if(a <= 30){
+      quay_phai(100);
+      delay(100);
+    }
+  }
+}
+
+void loop() {
+  // put your main code here, to run repeatedly:
+
+}

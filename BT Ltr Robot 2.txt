@@ -1,0 +1,196 @@
+#include<Servo.h>
+Servo myservo;
+#define AR 3  //analog banh phai
+#define AL 6  //analog banh trai
+#define DR 8  //digital banh phai
+#define DL 7  //digital banh trai
+#define trig 2  //trig la phat
+#define echo 12  //echo la nhan
+float R = 3.3; //banh xe
+float D = 13;  //khoang cach 2 banh
+float x0 = 20;  //khoang cach mong muon so voi tuong
+float epsilon = 5;
+float dt = 0.01;  //delta t cua pid
+float sum_err_van_toc = 0;
+float last_err_van_toc = 0;
+float sum_err_van_toc_goc = 0;
+float last_err_van_toc_goc = 0;
+unsigned long prev_mil = 0;
+float a;
+void setup() {
+  Serial.begin(9600);
+  pinMode(AR,OUTPUT);
+  pinMode(AL,OUTPUT);
+  pinMode(DR,OUTPUT);
+  pinMode(DL,OUTPUT);  
+  myservo.attach(A1);
+  pinMode(trig,OUTPUT);
+  pinMode(echo,INPUT);
+
+}
+void tien(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,HIGH);
+  analogWrite(AL,v);
+  digitalWrite(DR,HIGH);
+  analogWrite(AR,v);
+}
+void lui(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,0);
+  analogWrite(AL,v);
+  digitalWrite(DR,0);
+  analogWrite(AR,v);
+}
+void quaytrai(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,0);
+  analogWrite(AL,v);
+  digitalWrite(DR,HIGH);
+  analogWrite(AR,v);
+}
+void quayphai(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,HIGH);
+  analogWrite(AL,v);
+  digitalWrite(DR,0);
+  analogWrite(AR,v);
+}
+void retrai(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,HIGH);
+  analogWrite(AL,0);
+  digitalWrite(DR,HIGH);
+  analogWrite(AR,v);
+}
+void rephai(int v){
+  //int v = map(n,0,100,0,255);
+  digitalWrite(DL,HIGH);
+  analogWrite(AL,v);
+  digitalWrite(DR,HIGH);
+  analogWrite(AR,0);
+}
+void control_bot(int v_wheel)
+{
+  control_wheel_left(v_wheel);
+  control_wheel_right(v_wheel);
+}
+void control_wheel_right(int v){
+  if (v > 255) v = 255;
+  if (v < -255) v = -255;
+  if(v > 0){
+  digitalWrite(DR,HIGH);
+  analogWrite(AR,v);
+  }
+  else{
+  digitalWrite(DR,LOW);
+  analogWrite(AR,-v);
+  }
+}
+void control_wheel_left(int v){
+  if (v > 255) v = 255;
+  if (v < -255) v = -255;
+  if(v > 0){
+  digitalWrite(DL,HIGH);
+  analogWrite(AL,v);
+  }
+  else{
+  digitalWrite(DL,LOW);
+  analogWrite(AL,-v);
+  }
+}
+float khoangcach(int goc){
+  float duration;
+  float distance;
+//  int sum = 0;
+  myservo.write(goc);
+  //delay(500);
+//  for(int i = 0; i < 5; i++){
+  digitalWrite(trig,0);
+  delayMicroseconds(2);
+  digitalWrite(trig,1);
+  delayMicroseconds(5);
+  digitalWrite(trig,0);
+  duration = pulseIn(echo,HIGH);
+  distance = float(duration/2/29.412);
+//  sum += distance;
+//  }
+//  distance = sum / 5;
+  return distance;
+}
+void neVatCan(int v,int kc_chophep, int tgian){
+  int kc_truoc;
+  int kc_trai;
+  int kc_phai;
+  kc_truoc = khoangcach(90);
+  tien(v);
+  if(kc_truoc < kc_chophep){
+    tien(0);
+    kc_trai = khoangcach(180);
+    kc_phai = khoangcach(0);
+    if(max(kc_trai,kc_phai) == kc_trai){
+      quaytrai(v);
+      delay(tgian);
+    }
+    else if(max(kc_trai,kc_phai) == kc_phai){
+      quayphai(v);
+      delay(tgian);
+    }
+  }
+}
+float PID(float error,float Kp, float Ki, float Kd, float& sum_err, float& last_err){
+  sum_err += error*dt;
+  float p = Kp * error;
+  float i = Ki * sum_err;
+  float d;
+  if(last_err == 0) d = 0;
+  else d = Kd * (error - last_err)/dt;
+  last_err = error;
+  float ut = p + i + d;
+  return ut;
+}
+void bamVat(){
+  float x = khoangcach(90);
+  float error = x-x0;
+  int v =(int)PID(error,100,2,3,sum_err_van_toc,last_err_van_toc);
+//  if(v > 255) v = 255;
+//  if(v < -255) v = -255;
+  control_bot(v);
+}
+void bamTuong(){
+  float x = khoangcach(180);
+  //float error_v = epsilon - abs(x-x0);
+  //int v = (int)PID(error_v,100,2,3,sum_err_van_toc,last_err_van_toc);
+  int v = 100;
+  float error_goc = x-x0;
+  int w = (int)PID(error_goc,20,1,1,sum_err_van_toc_goc,last_err_van_toc_goc);
+  int v_right = v + w;
+  int v_left = v - w; 
+  control_wheel_left(v_left);
+  control_wheel_right(v_right);
+  delay(10);
+}
+void bamTuongCoRe(){
+  unsigned long cur_mil = millis();
+  if(cur_mil - prev_mil >= 3000)
+  {
+    control_wheel_left(0);
+    control_wheel_right(0);
+    sum_err_van_toc_goc = 0;
+    last_err_van_toc_goc = 0;
+    a = khoangcach(90);
+    delay(1000);
+    prev_mil = cur_mil;
+    if(a <= 30){
+      lui(100);
+      delay(100);
+      quayphai(100);
+      delay(100);
+    }
+  }
+  else bamTuong();
+}
+void loop() {
+  // put your main code here, to run repeatedly:
+  bamTuongCoRe();
+}
